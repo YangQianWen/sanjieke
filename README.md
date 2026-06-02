@@ -40,10 +40,10 @@
 pip install selenium webdriver-manager
 ```
 
-## <font style="color:rgb(15, 17, 21);">⚙️</font><font style="color:rgb(15, 17, 21);"> 配置文件</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">config.ini</font>`<font style="color:rgb(15, 17, 21);">（必须修改）</font>
-<font style="color:rgb(15, 17, 21);">在项目根目录创建 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">config.ini</font>`<font style="color:rgb(15, 17, 21);">，并填写你自己的账号信息。</font>**<font style="color:rgb(15, 17, 21);">请务必修改以下内容</font>**<font style="color:rgb(15, 17, 21);">：</font>
+## ⚙️ 配置文件 config.ini（必须修改）
+在项目根目录创建 config.ini，并填写你自己的账号信息。请务必修改以下内容：
 
-```plain
+ini
 [login]
 username = 你的手机号/邮箱
 password = 你的密码
@@ -63,44 +63,49 @@ years = 1
 # true = 强制学习所有章节（忽略平台已完成标记）
 # false = 只学习未完成的章节（可能存在误判）
 force_learn = true
-```
+## 🚀 使用方法
+克隆本仓库或下载 study_course.py。
 
-## <font style="color:rgb(15, 17, 21);">🚀</font><font style="color:rgb(15, 17, 21);"> 使用方法</font>
-1. <font style="color:rgb(15, 17, 21);">克隆本仓库或下载</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">study_course.py</font>`<font style="color:rgb(15, 17, 21);">。</font>
-2. <font style="color:rgb(15, 17, 21);">安装依赖：</font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">pip install selenium webdriver-manager</font>`
-3. **<font style="color:rgb(15, 17, 21);">修改</font>****<font style="color:rgb(15, 17, 21);"> </font>**`**<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">config.ini</font>**`**<font style="color:rgb(15, 17, 21);"> </font>****<font style="color:rgb(15, 17, 21);">中的账号信息</font>**<font style="color:rgb(15, 17, 21);">（见上节）。</font>
-4. <font style="color:rgb(15, 17, 21);">运行脚本：</font>
+安装依赖：pip install selenium webdriver-manager
 
-<font style="color:rgb(15, 17, 21);">python study_course.py</font>
+修改 config.ini 中的账号信息（见上节）。
 
-<font style="color:rgb(15, 17, 21);">脚本会自动：</font>
+运行脚本：
 
-+ <font style="color:rgb(15, 17, 21);">打开 Chrome 浏览器</font>
-+ <font style="color:rgb(15, 17, 21);">登录平台</font>
-+ <font style="color:rgb(15, 17, 21);">获取课程列表（默认只学习前 3 门，可在代码末尾修改</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">links[:3]</font>`<font style="color:rgb(15, 17, 21);">）</font>
-+ <font style="color:rgb(15, 17, 21);">依次进入每门课程，展开所有章节，按顺序播放未完成（或强制）的视频</font>
-+ <font style="color:rgb(15, 17, 21);">视频播放完毕后自动关闭标签页，继续下一门课程</font>
+bash
+python study_course.py
+脚本会自动：
 
-## <font style="color:rgb(15, 17, 21);">📝</font><font style="color:rgb(15, 17, 21);"> 自定义配置（下载后需要修改的选项）</font>
-### <font style="color:rgb(15, 17, 21);">1. 修改学习的课程数量</font>
-<font style="color:rgb(15, 17, 21);">打开 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">study_course.py</font>`<font style="color:rgb(15, 17, 21);">，找到文件末尾的：</font>
+打开 Chrome 浏览器
 
-<font style="color:rgb(15, 17, 21);">for t, href in links[:3]:</font>
+登录平台
 
-<font style="color:rgb(15, 17, 21);">将</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">3</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">改为你想学习的课程数量（例如</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">links[:10]</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">表示学习前 10 门，去掉</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">[:3]</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">则学习全部课程）。</font>
+获取课程列表（默认只学习前 3 门，可在代码末尾修改 links[:3]）
 
-### <font style="color:rgb(15, 17, 21);">2. 调整视频卡住检测时间</font>
-<font style="color:rgb(15, 17, 21);">如果需要更灵敏或更宽松的卡住检测，修改文件开头的 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">PLAY_STALL_TIMEOUT</font>`<font style="color:rgb(15, 17, 21);"> 变量（单位：秒）：</font>
+依次进入每门课程，展开所有章节，按顺序播放未完成（或强制）的视频
 
-<font style="color:rgb(15, 17, 21);">PLAY_STALL_TIMEOUT = 30   # 30秒无进度变化则跳过</font>
+视频播放完毕后自动关闭标签页，继续下一门课程
 
-### <font style="color:rgb(15, 17, 21);">3. 修改测试题等待时间</font>
-<font style="color:rgb(15, 17, 21);">如果测试题完成较慢，可增加</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">QUIZ_WAIT_SECONDS</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">的值（默认 60 秒）。</font>
+## 📝 自定义配置（下载后需要修改的选项）
+1. 修改学习的课程数量
+打开 study_course.py，找到文件末尾的：
 
-### <font style="color:rgb(15, 17, 21);">4. Chrome 安装路径（非默认路径）</font>
-<font style="color:rgb(15, 17, 21);">如果你将 Chrome 安装在</font>**<font style="color:rgb(15, 17, 21);">非标准位置</font>**<font style="color:rgb(15, 17, 21);">（例如 D 盘或其他自定义目录），请修改 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">find_chrome_binary()</font>`<font style="color:rgb(15, 17, 21);"> 函数中的路径列表，添加你的实际路径。函数位于代码开头附近：</font>
+python
+for t, href in links[:3]:
+将 3 改为你想学习的课程数量（例如 links[:10] 表示学习前 10 门，去掉 [:3] 则学习全部课程）。
 
-```plain
+2. 调整视频卡住检测时间
+如果需要更灵敏或更宽松的卡住检测，修改文件开头的 PLAY_STALL_TIMEOUT 变量（单位：秒）：
+
+python
+PLAY_STALL_TIMEOUT = 30   # 30秒无进度变化则跳过
+3. 修改测试题等待时间
+如果测试题完成较慢，可增加 QUIZ_WAIT_SECONDS 的值（默认 60 秒）。
+
+4. Chrome 安装路径（非默认路径）
+如果你将 Chrome 安装在非标准位置（例如 D 盘或其他自定义目录），请修改 find_chrome_binary() 函数中的路径列表，添加你的实际路径。函数位于代码开头附近：
+
+python
 possible_paths = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -108,27 +113,29 @@ possible_paths = [
     r"D:\你的自定义路径\chrome.exe",   # 在这里添加你的路径
     os.environ.get("CHROME_BIN", "")
 ]
-```
+5. 关闭强制学习模式
+如果你希望只学习平台标记为“未完成”的章节（避免重复播放已学内容），可将 config.ini 中的 force_learn 改为 false：
 
-### <font style="color:rgb(15, 17, 21);">5. 关闭强制学习模式</font>
-<font style="color:rgb(15, 17, 21);">如果你希望只学习平台标记为“未完成”的章节（避免重复播放已学内容），可将 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">config.ini</font>`<font style="color:rgb(15, 17, 21);"> 中的 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">force_learn</font>`<font style="color:rgb(15, 17, 21);"> 改为 </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">false</font>`<font style="color:rgb(15, 17, 21);">：</font>
+ini
+force_learn = false
+注意：由于三节课平台可能提前显示“已完成”占位符，导致误判，建议保持 force_learn = true 以确保不遗漏任何视频。如果视频因已完成而无法重新播放，卡住检测会自动跳过。
 
-<font style="color:rgb(15, 17, 21);">force_learn = false</font>
+## 📌 注意事项
+首次运行会自动下载匹配的 ChromeDriver（需联网），后续使用缓存。
 
-**<font style="color:rgb(15, 17, 21);">注意</font>**<font style="color:rgb(15, 17, 21);">：由于三节课平台可能提前显示“已完成”占位符，导致误判，建议保持</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">force_learn = true</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">以确保不遗漏任何视频。如果视频因已完成而无法重新播放，卡住检测会自动跳过。</font>
+如果网络较慢，可适当增加代码中的 time.sleep() 等待时间。
 
-## <font style="color:rgb(15, 17, 21);">📌</font><font style="color:rgb(15, 17, 21);"> 注意事项</font>
-+ <font style="color:rgb(15, 17, 21);">首次运行会自动下载匹配的 ChromeDriver（需联网），后续使用缓存。</font>
-+ <font style="color:rgb(15, 17, 21);">如果网络较慢，可适当增加代码中的</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">time.sleep()</font>`<font style="color:rgb(15, 17, 21);"> </font><font style="color:rgb(15, 17, 21);">等待时间。</font>
-+ <font style="color:rgb(15, 17, 21);">若视频因平台限制无法自动播放，脚本会尝试 JavaScript 调用</font><font style="color:rgb(15, 17, 21);"> </font>`<font style="color:rgb(15, 17, 21);background-color:rgb(235, 238, 242);">video.play()</font>`<font style="color:rgb(15, 17, 21);">。</font>
-+ <font style="color:rgb(15, 17, 21);">测试题章节默认等待 60 秒检测完成状态，超时会提示手动完成并回车继续。</font>
-+ <font style="color:rgb(15, 17, 21);">如遇到新页面结构变化导致元素定位失败，请提供错误日志，我会协助更新选择器。</font>
+若视频因平台限制无法自动播放，脚本会尝试 JavaScript 调用 video.play()。
 
-## <font style="color:rgb(15, 17, 21);">📄</font><font style="color:rgb(15, 17, 21);"> 许可证</font>
-<font style="color:rgb(15, 17, 21);">本项目仅供</font>**<font style="color:rgb(15, 17, 21);">技术学习与研究</font>**<font style="color:rgb(15, 17, 21);">使用。</font><font style="color:rgb(15, 17, 21);">  
-</font><font style="color:rgb(15, 17, 21);">严禁用于任何违反平台规定的“刷课”“作弊”等行为，使用者须自行承担相关风险。</font>
+测试题章节默认等待 60 秒检测完成状态，超时会提示手动完成并回车继续。
 
-## <font style="color:rgb(15, 17, 21);">🔗</font><font style="color:rgb(15, 17, 21);"> 参考</font>
-+ <font style="color:rgb(15, 17, 21);">原始仓库：</font>[<font style="color:rgb(57, 100, 254);">Mogul-Wang/sanjieke</font>](https://github.com/Mogul-Wang/sanjieke)
-+ <font style="color:rgb(15, 17, 21);">Selenium 官方文档：</font>[<font style="color:rgb(57, 100, 254);">https://www.selenium.dev/documentation/</font>](https://www.selenium.dev/documentation/)
+如遇到新页面结构变化导致元素定位失败，请提供错误日志，我会协助更新选择器。
 
+## 📄 许可证
+本项目仅供技术学习与研究使用。
+严禁用于任何违反平台规定的“刷课”“作弊”等行为，使用者须自行承担相关风险。
+
+## 🔗 参考
+原始仓库：Mogul-Wang/sanjieke
+
+Selenium 官方文档：https://www.selenium.dev/documentation/
