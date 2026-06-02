@@ -43,7 +43,7 @@ pip install selenium webdriver-manager
 ## ⚙️ 配置文件 config.ini（必须修改）
 在项目根目录创建 config.ini，并填写你自己的账号信息。请务必修改以下内容：
 
-ini
+```plain
 [login]
 username = 你的手机号/邮箱
 password = 你的密码
@@ -63,49 +63,36 @@ years = 1
 # true = 强制学习所有章节（忽略平台已完成标记）
 # false = 只学习未完成的章节（可能存在误判）
 force_learn = true
+```
 ## 🚀 使用方法
-克隆本仓库或下载 study_course.py。
-
-安装依赖：pip install selenium webdriver-manager
-
-修改 config.ini 中的账号信息（见上节）。
-
-运行脚本：
-
-bash
-python study_course.py
+1.克隆本仓库或下载 study_course.py。
+2.安装依赖：pip install selenium webdriver-manager
+3.修改 config.ini 中的账号信息（见上节）。
+4.运行脚本：python study_course.py
 脚本会自动：
 
 打开 Chrome 浏览器
-
 登录平台
-
 获取课程列表（默认只学习前 3 门，可在代码末尾修改 links[:3]）
-
 依次进入每门课程，展开所有章节，按顺序播放未完成（或强制）的视频
-
 视频播放完毕后自动关闭标签页，继续下一门课程
 
 ## 📝 自定义配置（下载后需要修改的选项）
-1. 修改学习的课程数量
+### 1. 修改学习的课程数量
 打开 study_course.py，找到文件末尾的：
-
-python
 for t, href in links[:3]:
 将 3 改为你想学习的课程数量（例如 links[:10] 表示学习前 10 门，去掉 [:3] 则学习全部课程）。
 
-2. 调整视频卡住检测时间
+### 2. 调整视频卡住检测时间
 如果需要更灵敏或更宽松的卡住检测，修改文件开头的 PLAY_STALL_TIMEOUT 变量（单位：秒）：
-
-python
 PLAY_STALL_TIMEOUT = 30   # 30秒无进度变化则跳过
-3. 修改测试题等待时间
+### 3. 修改测试题等待时间
 如果测试题完成较慢，可增加 QUIZ_WAIT_SECONDS 的值（默认 60 秒）。
 
-4. Chrome 安装路径（非默认路径）
+### 4. Chrome 安装路径（非默认路径）
 如果你将 Chrome 安装在非标准位置（例如 D 盘或其他自定义目录），请修改 find_chrome_binary() 函数中的路径列表，添加你的实际路径。函数位于代码开头附近：
 
-python
+```plain
 possible_paths = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -113,23 +100,19 @@ possible_paths = [
     r"D:\你的自定义路径\chrome.exe",   # 在这里添加你的路径
     os.environ.get("CHROME_BIN", "")
 ]
-5. 关闭强制学习模式
+```
+### 5. 关闭强制学习模式
 如果你希望只学习平台标记为“未完成”的章节（避免重复播放已学内容），可将 config.ini 中的 force_learn 改为 false：
-
-ini
 force_learn = false
+
 注意：由于三节课平台可能提前显示“已完成”占位符，导致误判，建议保持 force_learn = true 以确保不遗漏任何视频。如果视频因已完成而无法重新播放，卡住检测会自动跳过。
 
 ## 📌 注意事项
-首次运行会自动下载匹配的 ChromeDriver（需联网），后续使用缓存。
-
-如果网络较慢，可适当增加代码中的 time.sleep() 等待时间。
-
-若视频因平台限制无法自动播放，脚本会尝试 JavaScript 调用 video.play()。
-
-测试题章节默认等待 60 秒检测完成状态，超时会提示手动完成并回车继续。
-
-如遇到新页面结构变化导致元素定位失败，请提供错误日志，我会协助更新选择器。
++. 首次运行会自动下载匹配的 ChromeDriver（需联网），后续使用缓存。
++. 如果网络较慢，可适当增加代码中的 time.sleep() 等待时间。
++. 若视频因平台限制无法自动播放，脚本会尝试 JavaScript 调用 video.play()。
++. 测试题章节默认等待 60 秒检测完成状态，超时会提示手动完成并回车继续。
++. 如遇到新页面结构变化导致元素定位失败，请提供错误日志，我会协助更新选择器。
 
 ## 📄 许可证
 本项目仅供技术学习与研究使用。
@@ -137,5 +120,4 @@ force_learn = false
 
 ## 🔗 参考
 原始仓库：Mogul-Wang/sanjieke
-
 Selenium 官方文档：https://www.selenium.dev/documentation/
