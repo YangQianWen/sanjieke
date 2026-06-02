@@ -66,9 +66,13 @@ force_learn = true
 ```
 ## 🚀 使用方法
 1.克隆本仓库或下载 study_course.py。
+
 2.安装依赖：pip install selenium webdriver-manager
+
 3.修改 config.ini 中的账号信息（见上节）。
+
 4.运行脚本：python study_course.py
+
 脚本会自动：
 
 打开 Chrome 浏览器
