@@ -477,8 +477,8 @@ if __name__ == "__main__":
     bot = AutoCourseBot(USERNAME, PASSWORD)
     bot.login()
     links = bot.get_all_course_links(course_type)
-    # 学习前3门课程（可根据需要修改或删除切片）
-    for t, href in links[:3]:
+    # 学习全部课程（删除切片限制）
+    for t, href in links:
         bot.study_course(href)
     print("🎉 所有课程学习完毕")
     bot.driver.quit()
