@@ -1,14 +1,16 @@
 # -*- coding:utf-8 -*-
 """
-三节课自动刷课脚本 - 修复版（稳定学习未完成章节）
+三节课自动刷课脚本 - 修复子章节识别与记录匹配
 功能：
 - 自动登录
 - 获取课程列表
-- 智能跳过已完成章节（基于视频实际播放进度）
+- 自动学习课程（智能跳过已完成章节）
 - 自动设置2倍速
 - 处理弹窗
 - 检测视频卡住并跳过
+- 处理测试题（等待或手动）
 - 支持断点续学
+- 修复：递归获取所有子视频叶子节点，避免遗漏
 """
 import time
 import random
@@ -86,7 +88,7 @@ class AutoCourseBot:
         self.wait = WebDriverWait(self.driver, 20)
         self.username = username
         self.password = password
-        self.completed_chapters = self.load_progress()  # 加载已完成的章节记录
+        self.completed_chapters = self.load_progress()
 
     # ========== 进度记录（断点续学） ==========
     def load_progress(self):
@@ -108,8 +110,14 @@ class AutoCourseBot:
             pass
 
     def is_chapter_completed_by_record(self, course_title, chapter_title):
+        """检查本地记录，并打印调试信息"""
         key = f"{course_title}|{chapter_title}"
-        return key in self.completed_chapters
+        exists = key in self.completed_chapters
+        if exists:
+            print(f"  ✅ 记录命中: {key}")
+        else:
+            print(f"  ❌ 记录未命中: {key}")
+        return exists
 
     # ========== 辅助方法 ==========
     def handle_popup(self):
@@ -240,7 +248,7 @@ class AutoCourseBot:
         keywords = ["测试", "考试", "测验", "练习", "quiz", "exam", "test"]
         return any(kw in title.lower() for kw in keywords)
 
-    def safe_click_by_title(self, title, selector_type=".section-container .node-item", fallback_selector=".chapter-item-con"):
+    def safe_click_by_title(self, title):
         """根据标题点击章节，返回被点击的元素"""
         escaped = title.replace("'", "\\'")
         xpath = f"//*[contains(@class, 'node-name-con') and normalize-space(text())='{escaped}']/ancestor::div[contains(@class, 'node-item') or contains(@class, 'chapter-item-con')]"
@@ -251,26 +259,12 @@ class AutoCourseBot:
             elem.click()
             return elem
         except:
-            # 降级方案
-            leaves = self.driver.find_elements(By.CSS_SELECTOR, selector_type)
-            if not leaves:
-                leaves = self.driver.find_elements(By.CSS_SELECTOR, fallback_selector)
-            for leaf in leaves:
-                try:
-                    t = leaf.find_element(By.CSS_SELECTOR, ".node-name-con, .chapter-name").text.strip()
-                    if t == title:
-                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", leaf)
-                        time.sleep(1)
-                        leaf.click()
-                        return leaf
-                except:
-                    continue
             return None
 
     def process_chapters(self, course_title):
-        """处理课程章节：只学习未完成的（基于视频实际进度）"""
+        """处理课程章节：使用递归XPath获取所有叶子节点"""
         try:
-            # 等待菜单加载
+            # 等待菜单容器
             menu = WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.nav-menu-container"))
             )
@@ -293,32 +287,40 @@ class AutoCourseBot:
 
             time.sleep(2)
 
-            # 收集所有叶子节点
-            leaf_selector = ".section-container .node-item"
-            leaves = self.driver.find_elements(By.CSS_SELECTOR, leaf_selector)
-            if not leaves:
-                leaf_selector = ".chapter-item-con"
-                leaves = self.driver.find_elements(By.CSS_SELECTOR, leaf_selector)
+            # 递归获取所有叶子节点（子视频）的标题和对应元素
+            leaf_xpath = "//div[contains(@class, 'node-item') or contains(@class, 'chapter-item-con')]//div[contains(@class, 'node-name-con')]"
+            leaf_spans = self.driver.find_elements(By.XPATH, leaf_xpath)
+            chapters = []
+            for span in leaf_spans:
+                title = span.text.strip()
+                if title:
+                    # 向上查找可点击的祖先元素
+                    parent = span.find_element(By.XPATH, "./ancestor::div[contains(@class, 'node-item') or contains(@class, 'chapter-item-con')]")
+                    chapters.append((title, parent))
 
-            if not leaves:
+            # 降级方案：如果上述未找到，使用原有选择器
+            if not chapters:
+                leaf_selector = ".section-container .node-item"
+                leaves = self.driver.find_elements(By.CSS_SELECTOR, leaf_selector)
+                if not leaves:
+                    leaf_selector = ".chapter-item-con"
+                    leaves = self.driver.find_elements(By.CSS_SELECTOR, leaf_selector)
+                for leaf in leaves:
+                    try:
+                        title = leaf.find_element(By.CSS_SELECTOR, ".node-name-con, .chapter-name").text.strip()
+                        if title:
+                            chapters.append((title, leaf))
+                    except:
+                        continue
+
+            if not chapters:
                 print("⚠️ 未找到任何可学习章节")
                 return
 
-            # 提取所有章节标题
-            chapters = []
-            for leaf in leaves:
-                try:
-                    title = leaf.find_element(By.CSS_SELECTOR, ".node-name-con, .chapter-name").text.strip()
-                    if title:
-                        chapters.append(title)
-                except:
-                    continue
-
             print(f"🎯 共找到 {len(chapters)} 个章节")
 
-            # 遍历每个章节，检查本地记录
-            for idx, title in enumerate(chapters):
-                # 先检查本地进度记录
+            for idx, (title, elem) in enumerate(chapters):
+                # 检查本地记录
                 if self.is_chapter_completed_by_record(course_title, title) and not FORCE_LEARN:
                     print(f"✅ 已完成（记录）: {title}，跳过")
                     continue
@@ -326,27 +328,29 @@ class AutoCourseBot:
                 print(f"📖 开始学习 [{idx+1}/{len(chapters)}]: {title}")
 
                 # 点击章节
-                clicked = self.safe_click_by_title(title, leaf_selector)
-                if not clicked:
-                    print(f"  无法定位章节 '{title}'，跳过")
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+                    time.sleep(1)
+                    elem.click()
+                    time.sleep(3)
+                except StaleElementReferenceException:
+                    # 重新尝试根据标题定位
+                    new_elem = self.safe_click_by_title(title)
+                    if not new_elem:
+                        print(f"  无法定位章节 '{title}'，跳过")
+                        continue
+                except Exception as e:
+                    print(f"  点击失败: {e}")
                     continue
-
-                time.sleep(3)
 
                 # 判断是否为测试题
                 if self.is_test_chapter(title):
                     self.handle_quiz(title)
-                    # 测试题完成后保存进度
-                    self.save_progress(course_title, title)
-                    continue
-
-                # 视频章节：播放并等待完成
-                completed = self.play_video_and_wait(title)
-                if completed:
-                    print(f"✅ 章节 '{title}' 学习完成，保存进度")
                     self.save_progress(course_title, title)
                 else:
-                    print(f"⚠️ 章节 '{title}' 未能完成（可能播放失败），不保存进度")
+                    completed = self.play_video_and_wait(title)
+                    if completed:
+                        self.save_progress(course_title, title)
 
             print("✅ 所有章节处理完毕")
 
@@ -377,26 +381,28 @@ class AutoCourseBot:
         """播放视频并等待结束，返回是否完成"""
         print(f"▶️ 开始处理视频: {title}")
 
-        # 等待页面稳定
         time.sleep(2)
-
-        # 先检查视频是否已经播放完毕（例如之前已完成但未记录）
+        # 快速检查是否已完成
         if self.is_video_finished():
             print(f"  检测到视频已播放完毕，无需重新学习")
             return True
 
-        # 确保视频播放
         self.ensure_video_play()
+
+        # 检查是否有视频元素
+        has_video = self.driver.execute_script("return document.querySelector('video') !== null;")
+        if not has_video:
+            print("⚠️ 当前页面没有视频元素，等待3秒后跳过")
+            time.sleep(3)
+            return False
 
         # 获取视频时长
         duration = self.get_video_duration()
         if duration is None or duration <= 0:
             print("⚠️ 无法获取视频时长，尝试播放60秒后退出")
-            # 没有视频元素，可能是非视频内容，等待30秒后返回成功（避免卡死）
-            time.sleep(30)
+            time.sleep(60)
             return True  # 假设完成
 
-        # 动态设置超时时间：视频时长的1.2倍 + 30秒缓冲，最少120秒
         max_wait = max(int(duration * 1.2) + 30, 120)
         print(f"  视频时长: {duration} 秒，最大等待 {max_wait} 秒")
 
@@ -411,16 +417,13 @@ class AutoCourseBot:
                 print(f"⏰ 等待超时 ({max_wait}秒)，强制结束")
                 break
 
-            # 检查是否结束
             if self.is_video_finished():
                 print("✅ 视频已播放完毕")
                 return True
 
-            # 处理弹窗
             self.handle_popup()
             self.handle_leave_page_tip()
 
-            # 获取当前进度
             current, dur = self.get_video_progress()
             if dur > 0:
                 progress = int(current / dur * 100)
@@ -428,7 +431,6 @@ class AutoCourseBot:
                     print(f"  播放进度: {progress}% ({int(current)}/{int(dur)}秒)")
                     last_progress = progress
 
-                # 检测卡住
                 if current == last_current:
                     if stall_start is None:
                         stall_start = time.time()
@@ -441,17 +443,15 @@ class AutoCourseBot:
 
             time.sleep(random.uniform(2, 5))
 
-        return False  # 超时未完成
+        return False
 
     def get_video_duration(self):
-        """获取视频总时长（秒），失败返回None"""
         try:
             return self.driver.execute_script("return document.querySelector('video')?.duration || 0;")
         except:
             return None
 
     def get_video_progress(self):
-        """获取当前播放时间和总时长"""
         try:
             current = self.driver.execute_script("return document.querySelector('video')?.currentTime || 0;")
             duration = self.driver.execute_script("return document.querySelector('video')?.duration || 0;")
@@ -460,7 +460,6 @@ class AutoCourseBot:
             return 0, 0
 
     def is_video_finished(self):
-        """检查当前视频是否已播放完毕（ended 或进度 ≥ 95%）"""
         try:
             ended = self.driver.execute_script("return document.querySelector('video')?.ended || false;")
             if ended:
@@ -477,7 +476,7 @@ if __name__ == "__main__":
     bot = AutoCourseBot(USERNAME, PASSWORD)
     bot.login()
     links = bot.get_all_course_links(course_type)
-    # 学习全部课程（删除切片限制）
+    # 学习全部课程（去掉切片限制）
     for t, href in links:
         bot.study_course(href)
     print("🎉 所有课程学习完毕")
