@@ -15,8 +15,11 @@
 无需任何操作，脚本自动读取 progress.json，只学未完成的。
 ## progress.json 修改
 . 删除文件 → 全部重置。
+
 . 清空内容 [] → 全部重置。
+
 . 删除某条记录 → 只重学对应章节。
+
 . 强制学习所有：config.ini 添加 force_learn = true。
 
 # 6月2日-更新
