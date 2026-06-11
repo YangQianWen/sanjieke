@@ -1,14 +1,3 @@
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: 'f8db1b8a-a416-42b8-a766-c8be75a740a1'
-  PropagateID: 'f8db1b8a-a416-42b8-a766-c8be75a740a1'
-  ReservedCode1: 'cf42fe48-bfea-410c-a616-6c569b35e986'
-  ReservedCode2: 'cf42fe48-bfea-410c-a616-6c569b35e986'
----
-
 # 三节课自动学习脚本（修复增强版）
 
 本项目基于 [Mogul-Wang/sanjieke](https://github.com/Mogul-Wang/sanjieke) 进行深度修复与功能增强，解决了原版脚本中的多个稳定性问题（如误判章节完成、视频闪退、卡死、元素失效等），并增加了强制学习模式、视频自然结束等待、卡顿自动跳过等特性。
