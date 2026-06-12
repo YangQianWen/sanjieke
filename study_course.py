@@ -77,7 +77,8 @@ class AutoCourseBot:
     def load_progress(self):
         if os.path.exists(PROGRESS_FILE):
             try:
-                with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
+                # 使用 utf-8-sig 自动处理 BOM（PowerShell Set-Content 会添加 BOM）
+                with open(PROGRESS_FILE, 'r', encoding='utf-8-sig') as f:
                     return set(json.load(f))
             except:
                 return set()
@@ -87,6 +88,7 @@ class AutoCourseBot:
         key = f"{course_title}|{chapter_title}"
         self.completed_chapters.add(key)
         try:
+            # 确保不写入 BOM，使用 utf-8 编码
             with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(list(self.completed_chapters), f, ensure_ascii=False, indent=2)
         except:
@@ -134,6 +136,29 @@ class AutoCourseBot:
         except:
             pass
 
+        # 优先处理 xgplayer-nostart 状态：需要点击启动按钮才能进入正常播放
+        try:
+            is_nostart = self.driver.execute_script("""
+                var player = document.querySelector('.xgplayer');
+                return player && player.classList.contains('xgplayer-nostart');
+            """)
+            if is_nostart:
+                # 点击 xgplayer-start 启动按钮
+                start_btn = self.driver.find_element(By.CSS_SELECTOR, ".xgplayer-start")
+                if start_btn.is_displayed():
+                    if not silent:
+                        print("  点击 xgplayer-start 启动按钮")
+                    try:
+                        start_btn.click()
+                    except:
+                        self.driver.execute_script("arguments[0].click();", start_btn)
+                    time.sleep(2)
+                    # 启动后设置倍速
+                    self.driver.execute_script(f"var v = document.querySelector('video'); if(v) v.playbackRate = {speed};")
+                    return True
+        except:
+            pass
+
         # 方法1: 直接调用 video.play()
         try:
             self.driver.execute_script(f"""
@@ -166,10 +191,23 @@ class AutoCourseBot:
             pass
         return True
 
-    def wait_for_video_element(self, timeout=15):
+    def wait_for_video_element(self, timeout=25):
+        """等待视频元素出现，超时时间更长以适应慢加载页面"""
         for i in range(timeout):
-            if self.driver.execute_script("return document.querySelector('video') !== null;"):
-                return True
+            try:
+                has_video = self.driver.execute_script("return document.querySelector('video') !== null;")
+                if has_video:
+                    return True
+                # 检查是否有xgplayer容器（即使video还没渲染出来）
+                has_player = self.driver.execute_script("return document.querySelector('.xgplayer, .video-player') !== null;")
+                if has_player:
+                    # 播放器容器已出现，再等几秒让video元素渲染
+                    time.sleep(3)
+                    has_video = self.driver.execute_script("return document.querySelector('video') !== null;")
+                    if has_video:
+                        return True
+            except:
+                pass
             time.sleep(1)
         return False
 
@@ -267,17 +305,44 @@ class AutoCourseBot:
         keywords = ["测试", "考试", "测验", "练习", "quiz", "exam", "test"]
         return any(kw in title.lower() for kw in keywords)
 
-    def _check_all_sub_videos_completed(self, course_title):
-        """检查当前页面上所有可见的 section-item-con 子视频是否都在 progress.json 中有记录"""
+    def _check_all_sub_videos_completed(self, course_title, parent_node_id=""):
+        """检查指定父章节内的子视频是否都在 progress.json 中有记录。
+        如果指定了 parent_node_id，只检查该 nav-menu-item 内的子视频；
+        否则回退到检查全页面（旧逻辑）。"""
         try:
-            section_cons = self.driver.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
+            section_cons = []
+            if parent_node_id:
+                # 在包含该 node-id 的 nav-menu-item 内查找子视频
+                try:
+                    con = self.driver.find_element(By.CSS_SELECTOR, f".chapter-item-con[node-id='{parent_node_id}']")
+                    nav_item = self.driver.execute_script("""
+                        var el = arguments[0];
+                        while (el && !el.classList.contains('nav-menu-item')) {
+                            el = el.parentElement;
+                        }
+                        return el;
+                    """, con)
+                    if nav_item:
+                        section_cons = nav_item.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
+                except:
+                    pass
+            if not section_cons:
+                # 回退：检查全页面
+                section_cons = self.driver.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
             if not section_cons:
                 return False
             for con in section_cons:
                 try:
                     name = con.find_element(By.CSS_SELECTOR, ".section-name")
-                    title = ' '.join(name.text.strip().split())
-                    if title and not self.is_chapter_completed_by_record(course_title, title):
+                    # 使用 JS textContent 而非 Selenium .text，因为隐藏/未滚动到视图的元素 .text 返回空字符串
+                    title = self.driver.execute_script(
+                        "return arguments[0].textContent.replace(/\\u00a0/g, ' ').trim();", name
+                    )
+                    title = ' '.join(title.split())
+                    if not title:
+                        # 无法获取子视频名称，视为未完成
+                        return False
+                    if not self.is_chapter_completed_by_record(course_title, title):
                         return False
                 except:
                     return False
@@ -324,10 +389,10 @@ class AutoCourseBot:
             pass
 
     def click_by_node_id(self, node_id):
-        """通过 node-id 属性点击章节，最可靠的方式"""
+        """通过 node-id 属性点击章节或子视频，最可靠的方式"""
+        # 优先尝试 chapter-item-con（主章节）
         try:
-            # 直接点击包含该 node-id 的 chapter-item-con
-            elem = WebDriverWait(self.driver, 10).until(
+            elem = WebDriverWait(self.driver, 5).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, f".chapter-item-con[node-id='{node_id}']"))
             )
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
@@ -335,26 +400,58 @@ class AutoCourseBot:
             try:
                 elem.click()
             except:
-                # 如果普通click不行，用JS click
                 self.driver.execute_script("arguments[0].click();", elem)
             return True
         except:
-            # 回退：找 nav-menu-item 父级再点击
+            pass
+
+        # 尝试 section-item-con（子视频）
+        try:
+            elem = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, f".section-item-con[node-id='{node_id}']"))
+            )
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+            time.sleep(0.5)
             try:
-                elem = self.driver.find_element(By.CSS_SELECTOR, f".chapter-item-con[node-id='{node_id}']")
-                nav_item = self.driver.execute_script("""
-                    var el = arguments[0];
-                    while (el && !el.classList.contains('nav-menu-item')) {
-                        el = el.parentElement;
-                    }
-                    return el || arguments[0];
-                """, elem)
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", nav_item)
-                time.sleep(0.5)
-                nav_item.click()
-                return True
+                elem.click()
             except:
-                return False
+                self.driver.execute_script("arguments[0].click();", elem)
+            return True
+        except:
+            pass
+
+        # 回退：任意 [node-id] 元素
+        try:
+            elem = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, f"[node-id='{node_id}']"))
+            )
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+            time.sleep(0.5)
+            try:
+                elem.click()
+            except:
+                self.driver.execute_script("arguments[0].click();", elem)
+            return True
+        except:
+            pass
+
+        # 最终回退：找 nav-menu-item 父级再点击
+        try:
+            # 尝试 chapter-item-con 或 section-item-con
+            elem = self.driver.find_element(By.CSS_SELECTOR, f".chapter-item-con[node-id='{node_id}'], .section-item-con[node-id='{node_id}']")
+            nav_item = self.driver.execute_script("""
+                var el = arguments[0];
+                while (el && !el.classList.contains('nav-menu-item')) {
+                    el = el.parentElement;
+                }
+                return el || arguments[0];
+            """, elem)
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", nav_item)
+            time.sleep(0.5)
+            nav_item.click()
+            return True
+        except:
+            return False
 
     def safe_click_by_text(self, title, retries=3):
         clean_title = ' '.join(title.split())
@@ -488,23 +585,25 @@ class AutoCourseBot:
             for idx, (clean_title, node_id, has_sub) in enumerate(chapter_info):
                 is_recorded = self.is_chapter_completed_by_record(course_title, clean_title)
 
-                # 有记录的章节直接跳过（force_learn=false 时的核心逻辑）
-                if is_recorded and not FORCE_LEARN:
-                    print(f"✅ [{idx+1}/{len(chapter_info)}]: {clean_title} — 已完成，跳过")
-                    continue
-
-                # 含子视频的父章节：检查所有子视频是否都有完成记录
-                if has_sub and not FORCE_LEARN:
-                    all_sub_done = self._check_all_sub_videos_completed(course_title)
-                    if all_sub_done:
-                        # 子视频全部完成，标记父章节完成并跳过
-                        self.save_progress(course_title, clean_title)
+                # 含子视频的父章节：即使父章节有完成记录，也要验证子视频是否真的完成
+                if has_sub:
+                    all_sub_done = self._check_all_sub_videos_completed(course_title, node_id)
+                    if all_sub_done and not FORCE_LEARN:
+                        if not is_recorded:
+                            self.save_progress(course_title, clean_title)
                         print(f"✅ [{idx+1}/{len(chapter_info)}]: {clean_title} — 子视频全部完成，跳过")
                         continue
-
-                print(f"📖 [{idx+1}/{len(chapter_info)}]: {clean_title}" +
-                      (" (有子视频)" if has_sub else "") +
-                      (" (强制重学)" if is_recorded and FORCE_LEARN else ""))
+                    # 子视频未全部完成，需要继续处理（即使父章节有记录也不跳过）
+                    if is_recorded and not FORCE_LEARN:
+                        print(f"⚠️ [{idx+1}/{len(chapter_info)}]: {clean_title} — 有完成记录但子视频未全部完成，重新处理")
+                    else:
+                        print(f"📖 [{idx+1}/{len(chapter_info)}]: {clean_title} (有子视频)")
+                else:
+                    # 普通章节：有记录直接跳过
+                    if is_recorded and not FORCE_LEARN:
+                        print(f"✅ [{idx+1}/{len(chapter_info)}]: {clean_title} — 已完成，跳过")
+                        continue
+                    print(f"📖 [{idx+1}/{len(chapter_info)}]: {clean_title}")
 
                 # 在点击前保存当前视频状态，用于后续判断视频是否真正切换
                 prev_src = self.get_video_src()
@@ -521,7 +620,7 @@ class AutoCourseBot:
                     if node_id:
                         self.click_by_node_id(node_id)
                         time.sleep(2)
-                    self.try_play_sub_videos(course_title, clean_title, prev_src)
+                    self.try_play_sub_videos(course_title, clean_title, prev_src, node_id)
                     continue
 
                 # 普通章节：点击章节
@@ -568,92 +667,113 @@ class AutoCourseBot:
             time.sleep(2)
         input("超时，按回车继续...")
 
-    def try_play_sub_videos(self, course_title, parent_title, prev_src_before_click=""):
+    def try_play_sub_videos(self, course_title, parent_title, prev_src_before_click="", parent_node_id=""):
         """尝试查找并播放折叠在章节标题下的子视频"""
         # 先尝试再次展开折叠内容
         self.expand_all_collapses()
         time.sleep(2)
 
-        # 查找子视频：优先用精确的 .section-item-con[node-id] 选择器
+        # 查找子视频：只在当前父章节的 nav-menu-item 中查找，避免找到其他章节的同名子视频
         sub_info = []  # [(title, node_id), ...]
 
-        # 方法1: 查找当前展开的 chapter-item-active 下的 section-item-con
-        try:
-            active_item = self.driver.find_element(By.CSS_SELECTOR, ".chapter-item-active")
-            section_cons = active_item.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
+        # 方法1: 在包含 parent_node_id 的 nav-menu-item 内查找
+        target_container = None
+        if parent_node_id:
+            try:
+                con = self.driver.find_element(By.CSS_SELECTOR, f".chapter-item-con[node-id='{parent_node_id}']")
+                # 向上找到 nav-menu-item
+                target_container = self.driver.execute_script("""
+                    var el = arguments[0];
+                    while (el && !el.classList.contains('nav-menu-item')) {
+                        el = el.parentElement;
+                    }
+                    return el;
+                """, con)
+            except:
+                pass
+
+        if target_container:
+            section_cons = target_container.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
             for con in section_cons:
                 nid = con.get_attribute("node-id") or ""
                 try:
                     name = con.find_element(By.CSS_SELECTOR, ".section-name")
-                    title = name.text.strip()
+                    # 使用 JS textContent 而非 Selenium .text，避免隐藏元素返回空字符串
+                    title = self.driver.execute_script(
+                        "return arguments[0].textContent.replace(/\\u00a0/g, ' ').trim();", name
+                    )
                     if title:
                         clean_t = ' '.join(title.split())
                         if clean_t not in [s[0] for s in sub_info]:
                             sub_info.append((clean_t, nid))
                 except:
                     continue
-        except:
-            pass
 
-        # 方法2: 使用广泛的选择器查找子视频条目
+        # 方法2: 通过 chapter-item-active 查找（如果点击后active已切换）
         if not sub_info:
-            sub_selectors = [
-                ".section-item-con[node-id]",
-                ".section-item-con",
-                ".section-item",
-                ".chapter-item .chapter-item",
-                ".node-item .node-item",
-                ".chapter-item .node-item",
-                ".lesson-item",
-                ".video-item",
-                ".sub-chapter",
-                ".sub-item",
-                ".ant-collapse-content-box .chapter-item",
-                ".ant-collapse-content-box .node-item",
-                ".ant-collapse-content-box .section-item",
-                "[class*='sub-chapter']",
-                "[class*='child-item']",
-                "[class*='lesson-']",
-                ".ant-collapse-content .chapter-item",
-                ".ant-collapse-content .node-item",
-            ]
-            for selector in sub_selectors:
-                try:
-                    elems = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    for elem in elems:
+            try:
+                active_item = self.driver.find_element(By.CSS_SELECTOR, ".chapter-item-active")
+                # 验证 active_item 是否是当前父章节
+                active_name = active_item.find_element(By.CSS_SELECTOR, ".chapter-name").text.strip()
+                if parent_title in active_name or active_name in parent_title:
+                    section_cons = active_item.find_elements(By.CSS_SELECTOR, ".section-item-con[node-id]")
+                    for con in section_cons:
+                        nid = con.get_attribute("node-id") or ""
                         try:
-                            for title_sel in [".section-name", ".node-name-con", ".chapter-name", ".name", ".title", "span.title", "a"]:
-                                try:
-                                    title_elem = elem.find_element(By.CSS_SELECTOR, title_sel)
-                                    title_text = title_elem.text.strip()
-                                    if title_text and title_text != parent_title:
-                                        clean_t = ' '.join(title_text.split())
-                                        if clean_t not in [s[0] for s in sub_info]:
-                                            nid = ""
-                                            try:
-                                                con = elem.find_element(By.CSS_SELECTOR, ".section-item-con, .chapter-item-con, [node-id]")
-                                                nid = con.get_attribute("node-id") or ""
-                                            except:
-                                                try:
-                                                    nid = elem.get_attribute("node-id") or ""
-                                                except:
-                                                    pass
-                                            sub_info.append((clean_t, nid))
-                                        break
-                                except:
-                                    continue
+                            name = con.find_element(By.CSS_SELECTOR, ".section-name")
+                            # 使用 JS textContent 而非 Selenium .text
+                            title = self.driver.execute_script(
+                                "return arguments[0].textContent.replace(/\\u00a0/g, ' ').trim();", name
+                            )
+                            if title:
+                                clean_t = ' '.join(title.split())
+                                if clean_t not in [s[0] for s in sub_info]:
+                                    sub_info.append((clean_t, nid))
                         except:
                             continue
-                except:
-                    continue
+            except:
+                pass
+
+        # 方法3: JS精确定位 —— 在包含 parent_node_id 的 nav-menu-item 内查找
+        if not sub_info and parent_node_id:
+            print(f"  使用JS在父章节内搜索子视频...")
+            try:
+                js_result = self.driver.execute_script("""
+                    var parentId = arguments[0];
+                    var results = [];
+                    // 找到包含该 node-id 的 nav-menu-item
+                    var con = document.querySelector(".chapter-item-con[node-id='" + parentId + "']");
+                    var navItem = con;
+                    while (navItem && !navItem.classList.contains('nav-menu-item')) {
+                        navItem = navItem.parentElement;
+                    }
+                    if (navItem) {
+                        navItem.querySelectorAll('.section-item-con[node-id]').forEach(el => {
+                            var nameEl = el.querySelector('.section-name');
+                            if (nameEl) {
+                                var text = nameEl.textContent.replace(/\\u00a0/g, ' ').trim();
+                                var nid = el.getAttribute('node-id') || '';
+                                if (text) results.push({text: text, nodeId: nid});
+                            }
+                        });
+                    }
+                    return results;
+                """, parent_node_id)
+                if js_result:
+                    for item in js_result:
+                        clean_t = ' '.join(item['text'].split())
+                        if clean_t and clean_t not in [s[0] for s in sub_info]:
+                            sub_info.append((clean_t, item.get('nodeId', '') or ''))
+            except:
+                pass
 
         if not sub_info:
-            # 尝试通过JS查找子视频条目
-            print("  使用JS搜索子视频条目...")
+            # 最终回退：通过JS查找全局子视频（仅在其他方法都失败时使用）
+            print("  使用JS全局搜索子视频条目...")
             try:
                 js_result = self.driver.execute_script("""
                     var results = [];
-                    // 优先查找 section-item-con（折叠子视频）
+                    // 查找所有 section-item-con（折叠子视频）
                     document.querySelectorAll('.section-item-con[node-id]').forEach(el => {
                         var nameEl = el.querySelector('.section-name');
                         if (nameEl) {
@@ -661,20 +781,6 @@ class AutoCourseBot:
                             var nid = el.getAttribute('node-id') || '';
                             if (text) results.push({text: text, nodeId: nid});
                         }
-                    });
-                    // 也查找 nav-menu-item / chapter-item-con（普通章节）
-                    document.querySelectorAll('.nav-menu-item, .chapter-item-con[node-id]').forEach(el => {
-                        var nameEl = el.querySelector('.chapter-name, .node-name-con, .name');
-                        if (nameEl) {
-                            var text = nameEl.textContent.replace(/\\u00a0/g, ' ').trim();
-                            var nid = el.getAttribute('node-id') || el.querySelector('[node-id]')?.getAttribute('node-id') || '';
-                            if (text && text.length < 100) results.push({text: text, nodeId: nid});
-                        }
-                    });
-                    // 折叠内容里的链接
-                    document.querySelectorAll('.ant-collapse-content a, .ant-collapse-content [role="button"]').forEach(el => {
-                        var text = el.textContent.replace(/\\u00a0/g, ' ').trim();
-                        if (text && text.length < 100) results.push({text: text, nodeId: ''});
                     });
                     return results;
                 """)
@@ -769,8 +875,28 @@ class AutoCourseBot:
         print(f"▶️ 播放视频: {title}")
         # 等待视频元素存在
         if not self.wait_for_video_element():
-            print("⚠️ 无视频元素，可能是图文章节，标记为完成")
-            return True
+            # 检查是否存在 xgplayer 或视频容器 —— 如果有，说明视频页面还没完全加载，不是图文章节
+            has_player_container = False
+            try:
+                has_player_container = self.driver.execute_script("""
+                    return !!(document.querySelector('.xgplayer') ||
+                              document.querySelector('.video-player') ||
+                              document.querySelector('[class*="player-container"]'));
+                """)
+            except:
+                pass
+            if has_player_container:
+                # 有播放器容器但没 video 元素，再等待一下
+                print("⚠️ 检测到播放器容器但无 video 元素，等待加载...")
+                if self.wait_for_video_element(timeout=15):
+                    pass  # video 元素出现了，继续往下走
+                else:
+                    print("⚠️ 播放器容器仍无 video 元素，视频可能加载失败")
+                    return False
+            else:
+                # 完全没有任何播放器容器，可能是图文章节
+                print("⚠️ 无视频元素和播放器容器，可能是图文章节，标记为完成")
+                return True
 
         # 等待视频源切换：与点击前的视频源比较，确认是新视频已加载
         video_changed = False
@@ -806,10 +932,21 @@ class AutoCourseBot:
             print("⚠️ 固定等待结束，但仍未检测到完成，跳过")
             return False
 
-        # 快速检查是否已完成 —— 仅在确认视频源已真正切换后才信任此判断
+        # 快速检查是否已完成 —— 仅在确认视频源已真正切换且播放器不在nostart状态后才信任
         state = self.get_video_state()
         if state["current"] > 0 and state["duration"] > 0 and (state["current"] / state["duration"] >= 0.95):
-            if video_changed:
+            # 检查 xgplayer 是否在 nostart 状态 —— 是则不信任进度数据
+            is_nostart = False
+            try:
+                is_nostart = self.driver.execute_script("""
+                    var player = document.querySelector('.xgplayer');
+                    return player && player.classList.contains('xgplayer-nostart');
+                """)
+            except:
+                pass
+            if is_nostart:
+                print("⚠️ 播放器处于 nostart 状态，进度数据不可信，需要启动播放器")
+            elif video_changed:
                 print("✅ 视频已播放完毕")
                 return True
             else:
@@ -834,6 +971,23 @@ class AutoCourseBot:
 
         # 开始播放
         self.ensure_video_play(speed=2, silent=False)
+
+        # 额外检查：确保 xgplayer 已脱离 nostart 状态
+        try:
+            still_nostart = self.driver.execute_script("""
+                var player = document.querySelector('.xgplayer');
+                return player && player.classList.contains('xgplayer-nostart');
+            """)
+            if still_nostart:
+                print("  ⚠️ 播放器仍处于 nostart 状态，再次点击启动按钮")
+                start_btn = self.driver.find_element(By.CSS_SELECTOR, ".xgplayer-start")
+                try:
+                    start_btn.click()
+                except:
+                    self.driver.execute_script("arguments[0].click();", start_btn)
+                time.sleep(3)
+        except:
+            pass
         total_wait = max(int(duration * 1.2) + 30, 120)
         total_wait = min(total_wait, duration * 2)
         print(f"  视频时长: {duration} 秒，总超时 {total_wait} 秒")
@@ -881,6 +1035,24 @@ class AutoCourseBot:
                     stall_start = None
                     time.sleep(1)
                     if pause_recovery_count >= 5 and current_speed > 1:
+                        # 暂停恢复超过5次，先检查是否又回到了 nostart 状态
+                        try:
+                            is_nostart = self.driver.execute_script("""
+                                var player = document.querySelector('.xgplayer');
+                                return player && player.classList.contains('xgplayer-nostart');
+                            """)
+                            if is_nostart:
+                                print(f"  ⚠️ 播放器回到了 nostart 状态，重新点击启动按钮")
+                                start_btn = self.driver.find_element(By.CSS_SELECTOR, ".xgplayer-start")
+                                try:
+                                    start_btn.click()
+                                except:
+                                    self.driver.execute_script("arguments[0].click();", start_btn)
+                                time.sleep(2)
+                                pause_recovery_count = 0
+                                continue
+                        except:
+                            pass
                         current_speed = 1
                         print(f"  ⚠️ 暂停恢复超过5次，降为1倍速并静默恢复")
                         self.ensure_video_play(speed=1, silent=False)
