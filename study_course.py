@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-三节课自动刷课脚本 - 优化版（解决时长获取失败和暂停日志冗余）
+三节课自动刷课脚本 - 最终修复版（解决 Service 未定义错误）
 """
 import time
 import random
@@ -13,7 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 
 MAX_WAIT_VIDEO_END = 3600
@@ -21,16 +21,29 @@ QUIZ_WAIT_SECONDS = 120
 PLAY_STALL_TIMEOUT = 60
 PROGRESS_FILE = "progress.json"
 
+# 检测是否在 Docker/headless 环境中运行
+RUNNING_IN_DOCKER = os.environ.get("RUNNING_IN_DOCKER", "").lower() in ("true", "1", "yes")
+
 def find_chrome_binary():
+    # 环境变量指定的路径优先
+    env_bin = os.environ.get("CHROME_BIN", "")
+    if env_bin and os.path.isfile(env_bin):
+        return env_bin
+    # 自动搜索常见路径
     possible_paths = [
+        # Linux 常见路径
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        # Windows 常见路径
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
         os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
         r"D:\360Downloads\Software\Google\Chrome\Application\chrome.exe",
-        os.environ.get("CHROME_BIN", "")
     ]
     for path in possible_paths:
-        if path and os.path.isfile(path):
+        if os.path.isfile(path):
             return path
     return None
 
@@ -60,15 +73,37 @@ class AutoCourseBot:
         chrome_options = Options()
         chrome_options.add_argument("--mute-audio")
         chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")
+        
+        # Docker/headless 环境：添加必要的 Chrome 参数
+        if RUNNING_IN_DOCKER:
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--window-size=1920,1080")
+            chrome_options.add_argument("--remote-debugging-port=9222")
+            print("🐳 Docker headless 模式")
+        
         chrome_binary = find_chrome_binary()
         if chrome_binary:
             chrome_options.binary_location = chrome_binary
             print(f"✅ 找到 Chrome 浏览器：{chrome_binary}")
         else:
             print("⚠️ 未自动找到 Chrome")
-        service = Service(ChromeDriverManager().install())
+        
+        if RUNNING_IN_DOCKER:
+            # Docker 环境：使用环境变量或默认路径的 chromedriver
+            chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+            service = ChromeService(chromedriver_path)
+        else:
+            # 本地环境：使用 webdriver-manager 自动下载
+            service = ChromeService(ChromeDriverManager().install())
+        
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.driver.maximize_window()
+        
+        if not RUNNING_IN_DOCKER:
+            self.driver.maximize_window()
+        
         self.wait = WebDriverWait(self.driver, 20)
         self.username = username
         self.password = password
@@ -241,10 +276,49 @@ class AutoCourseBot:
         login_btn = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.confirm-btn")))
         login_btn.click()
         print("✅ 登录成功")
+        # 等待页面跳转离开登录页
+        for _ in range(30):
+            if "/login" not in self.driver.current_url:
+                break
+            time.sleep(1)
+        # 额外等待页面主体渲染完成
         time.sleep(3)
 
     def get_all_course_links(self, course_type):
-        card_modules = self.wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.card-module")))
+        # 多种可能的课程卡片容器选择器，适配网站前端更新
+        card_selectors = [
+            "div.card-module",
+            "div[class*='card-module']",
+            "div[class*='CardModule']",
+            "div.course-card-module",
+            "div[class*='card']",
+        ]
+        card_modules = None
+        for selector in card_selectors:
+            try:
+                print(f"  尝试选择器: {selector}")
+                card_modules = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+                )
+                if card_modules:
+                    print(f"  ✅ 找到 {len(card_modules)} 个卡片容器 (选择器: {selector})")
+                    break
+            except TimeoutException:
+                card_modules = None
+                continue
+
+        if not card_modules:
+            # 全部选择器都失败，打印调试信息
+            print(f"⚠️ 所有选择器均未找到卡片容器")
+            print(f"  当前URL: {self.driver.current_url}")
+            print(f"  页面标题: {self.driver.title}")
+            # 打印页面中所有 div 的 class 帮助诊断
+            div_classes = self.driver.execute_script(
+                "return [...new Set(Array.from(document.querySelectorAll('div')).map(d=>d.className).filter(c=>c))].slice(0,50);"
+            )
+            print(f"  页面中 div 的 class (前50): {div_classes}")
+            raise TimeoutException("未找到课程卡片容器，请检查网站是否更新了前端")
+
         card_module = card_modules[int(years) - 1]
         time.sleep(2)
         course_links = card_module.find_elements(By.CSS_SELECTOR, "a.card-item")
